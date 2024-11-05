@@ -23,7 +23,6 @@ var LOG_DB *gorm.DB
 
 func CreateRootAccountIfNeed() error {
 	var user User
-	//if user.Status != util.UserStatusEnabled {
 	if err := DB.First(&user).Error; err != nil {
 		logger.SysLog("no user exists, creating a root user for you: username is root, password is 123456")
 		hashedPassword, err := common.Password2Hash("123456")
@@ -85,17 +84,30 @@ func openPostgreSQL(dsn string) (*gorm.DB, error) {
 	common.UsingPostgreSQL = true
 	return gorm.Open(postgres.New(postgres.Config{
 		DSN:                  dsn,
-		PreferSimpleProtocol: true, // disables implicit prepared statement usage
+		PreferSimpleProtocol: true,
 	}), &gorm.Config{
-		PrepareStmt: true, // precompile SQL
+		PrepareStmt: true,
 	})
 }
 
 func openMySQL(dsn string) (*gorm.DB, error) {
 	logger.SysLog("using MySQL as database")
 	common.UsingMySQL = true
-	return gorm.Open(mysql.Open(dsn), &gorm.Config{
-		PrepareStmt: true, // precompile SQL
+
+	// Parse existing DSN
+	cfg, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse DSN: %v", err)
+	}
+
+	// Enable SSL using system CA certificates
+	cfg.TLSConfig = "true"
+	
+	// Reconstruct DSN with SSL configuration
+	newDSN := cfg.FormatDSN()
+
+	return gorm.Open(mysql.Open(newDSN), &gorm.Config{
+		PrepareStmt: true,
 	})
 }
 
@@ -104,7 +116,7 @@ func openSQLite() (*gorm.DB, error) {
 	common.UsingSQLite = true
 	dsn := fmt.Sprintf("%s?_busy_timeout=%d", common.SQLitePath, common.SQLiteBusyTimeout)
 	return gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		PrepareStmt: true, // precompile SQL
+		PrepareStmt: true,
 	})
 }
 
@@ -123,7 +135,7 @@ func InitDB() {
 	}
 
 	if common.UsingMySQL {
-		_, _ = sqlDB.Exec("DROP INDEX idx_channels_key ON channels;") // TODO: delete this line when most users have upgraded
+		_, _ = sqlDB.Exec("DROP INDEX idx_channels_key ON channels;")
 	}
 
 	logger.SysLog("database migration started")
